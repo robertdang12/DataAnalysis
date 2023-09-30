@@ -1,0 +1,366 @@
+---
+title: 'Exploratory Data Analysis: Customer Purchases'
+author: "Robert Dang"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+The dataset used in this project is from Kaggle, published by the user [The Devastator.](https://www.kaggle.com/datasets/thedevastator/analyzing-customer-spending-habits-to-improve-sa/data)
+The dataset comprises sales records of a multinational company, documenting transactions associated with bicycles across four countries. This report delves into a comprehensive dataset comprising 34,866 observations across 17 variables. The aim is to extract actionable insights to inform strategic business decisions. By analyzing customer demographics, product details, and financial metrics, we'll uncover patterns and trends that can shape marketing strategies. This data-driven exploration is geared towards enhancing decision-making and driving business success.
+
+One limitation of the dataset is the absence of currency information for transactions, necessitating the retention of the numerical values as originally provided.It is also not known if the data is real or simulated. 
+
+The core objectives of the project include:
+
+-Comprehending customer behavior and their product interactions  
+
+-Appraising the performance of individual products  
+
+-Analyzing the company's revenue performance  
+
+
+## Load and Inspect Data
+```{r}
+setwd("C:/Users/rober/Downloads/DataVizProject")
+data <- read.csv("customer_purchases.csv")
+head(data)
+str(data)
+unique_countries <- unique(data$Country)
+print(unique_countries)
+
+unique_products <-unique(data$Product.Category)
+print(unique_products)
+
+unique_subCat <-unique(data$Sub.Category)
+print(unique_subCat)
+```
+## Data Cleaning
+"Column1" contains null values and should be excluded from the analysis. Similarly, the "index" column lacks meaningful information and can be safely removed.   
+The "Date" column is currently in "chr" data type; it should be converted to the "Date" data type for accurate data handling. Also, we can round the figures in the Unit Price column to cut off trailing zeros.
+
+```{r}
+data <- subset(data, select = -Column1) 
+data <- subset(data, select = -index) 
+data$Date <- as.Date(data$Date, format = "%m/%d/%y")
+data$Unit.Price <- round(data$Unit.Price, 2)
+
+```
+Check to see if any rows contain null values
+```{r}
+if (any(is.na(data))) {
+  print("There are NA values in the data frame.")
+} else {
+  print("There are no NA values in the data frame.")
+}
+rows_with_na <- rownames(data)[apply(data, 1, function(x) any(is.na(x)))]
+print(rows_with_na)
+data <- data[-34867,] #remove row with null value
+```
+Create new columns that would help us gain insights into business metrics
+
+```{r}
+data$margin <- data$Unit.Price - data$Unit.Cost 
+data$Profit <- data$Revenue - data$Cost 
+```
+```{r}
+install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+library("tidyverse")
+```
+
+## Data Exploration: Customer Demographics
+
+```{r}
+
+gender_table <- table(data$Customer.Gender)
+pct_gender<- round((gender_table / sum(gender_table)) * 100, 2)
+gendercount <- paste(names(gender_table), ": ", gender_table, " (", pct_gender, "%)", sep="")
+
+pie(gender_table, labels = gendercount, main = "Gender Distribution")
+
+data <- data %>%
+  mutate(Age.Group = case_when( #form age groups from Customer.Age                                                                 column
+    Customer.Age >= 17 & Customer.Age <= 24 ~ '17-24',
+    Customer.Age >= 25 & Customer.Age <= 34 ~ '25-34',
+    Customer.Age >= 35 & Customer.Age <= 44 ~ '35-44',
+    Customer.Age >= 45 & Customer.Age <= 54 ~ '45-54',
+    Customer.Age >= 55 & Customer.Age <= 64 ~ '55-64',
+    Customer.Age >= 65 & Customer.Age <= 74 ~ '65-74',
+    Customer.Age >= 75 ~ '75+'
+  ))
+
+ggplot(data, aes(x = Age.Group)) +
+  geom_bar(fill = "green") +
+  labs(x = "Age Group", y = "Count", title = "Age Distribution") +
+  theme_minimal()
+```
+
+## Purchase Trends Across Customer Age Groups
+
+It is evident that the accessories product category has the highest level of popularity across all age demographics. Specifically, the age bracket of 25-34 exhibits the highest volume of transactions across all product categories.
+```{r}
+#age group and product category
+ggplot(data, aes(x = Age.Group, fill = Product.Category)) +
+  geom_bar(position = "dodge") +
+  labs(x = "Age Group", y = "Count", fill = "Product Category") +
+  theme_minimal() +
+  ggtitle("Age Group vs. Product Category")
+
+#revenue by age group
+ggplot(data, aes(x = Age.Group)) +
+  geom_bar(fill = "blue") +
+  labs(x = "Age Group", y = "Revenue") +
+  theme_minimal() +
+  ggtitle("Revenue by Age Group")
+```
+
+## Composition of Sales
+
+```{r}
+#bar chart product category
+ggplot(data, aes(x = Product.Category)) +
+  geom_bar(fill = "blue") +
+  labs(title = "Product Category Distribution", x = "Product Category", y = "Count")
+
+#bar chart product subcategory
+ggplot(data, aes(x = Sub.Category)) +
+  geom_bar(fill = "blue") +
+  labs(title = "Product Subcategory Distribution", x = "Product Category", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#stacked bar chart
+ggplot(data, aes(x = Product.Category, fill = Sub.Category)) +
+  geom_bar() +
+  labs(x = "Product Category", y = "Count", fill = "Sub-Category") +
+  theme_minimal()
+```
+
+These visualizations reinforce the fact that accessories is the most popular product category. From the stacked bar chart, we learn that the product subcategory tires and tubes is the most popular, while bike racks is the least popular subcategory.
+
+Lets examine the profitability of the product subcategories
+```{r}
+
+sub_category_summary <- data %>%
+  group_by(Sub.Category) %>%
+  summarise(Avg_Unit_Price = mean(Unit.Price),
+            Avg_Unit_Cost = mean(Unit.Cost),
+            Avg_Margins = mean(margin))
+
+ggplot(sub_category_summary, aes(x = Sub.Category)) +
+  geom_point(aes(y = Avg_Unit_Price, color = "Average Unit Price")) +
+  geom_point(aes(y = Avg_Unit_Cost, color = "Average Unit Cost")) +
+  geom_point(aes(y = Avg_Margins, color = "Average Margin")) +
+  labs(title = "Average Unit Price, Cost, Margins by Sub-Category",
+       x = "Sub-Category",
+       y = "Average Unit Price / Cost") +
+  scale_color_manual(values = c("Average Unit Price" = "blue", "Average Unit Cost" = "red", "Average Margin" = "green")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#Profitability by sub-category
+ggplot(data, aes(x = Sub.Category, y = margin, fill = Product.Category)) +
+  geom_bar(stat = "summary", fun = "mean") +
+  labs(x = "Sub Category", y = "Margins") +
+  labs(title = "Mean Margins by sub-category",
+       x = "Country",
+       y = "Mean Margin") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+```
+
+## Trends over time
+These visualizations will help us determine if there are monthly or seasonal trends.
+```{r}
+data$Month <- factor(data$Month, levels = c("January", "February", 
+"March", "April", "May", "June", "July", "August", "September", "October", 
+"November", "December"))
+
+#bar chart monthly sales (total)
+ggplot(data, aes(x = Month, fill = Month)) +
+  geom_bar() +
+  labs(title = "Purchases by Month", x = "Month", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Now lets break it down by year
+
+```{r}
+data_2015 <- subset(data, Year == 2015)
+data_2016 <- subset(data, Year == 2016)
+
+#bar chart monthly revenue 2015
+ggplot(data_2015, aes(x = Month, y = Revenue)) +
+  geom_bar(stat = "summary", fun = "sum", fill = "blue") +
+  geom_line(data = data_2015, aes(group = 1), stat = "summary", fun = "sum", color = "red", linewidth = 1) +
+  labs(title = "Revenue by Month in 2015", x = "Month", y = "Total Revenue") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#bar chart monthly revenue 2016
+ggplot(data_2016, aes(x = Month, y = Revenue)) +
+  geom_bar(stat = "summary", fun = "sum", fill = "blue") +
+  geom_line(data = data_2016, aes(group = 1), stat = "summary", fun = "sum", color = "red", linewidth = 1) +
+  labs(title = "Revenue by Month in 2016", x = "Month", y = "Total Revenue") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+monthly_revenue <- data %>%
+  group_by(Month) %>%
+  summarise(Total_Revenue = sum(Revenue))
+
+# Create a time series plot of monthly revenue 2015 and 2016 combined
+ggplot(monthly_revenue, aes(x = Month, y = Total_Revenue, group = 1)) +
+  geom_line(color = "red") +
+  geom_point(color = "red") +
+  labs(title = "Monthly Revenue Trends 2015-2016", x = "Month", y = "Total Revenue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# monthly rev 2015
+monthly_revenue_2015 <- data_2015 %>%
+  group_by(Month) %>%
+  summarise(Total_Revenue = sum(Revenue))
+
+
+# monthly rev 2016
+monthly_revenue_2016 <- data_2016 %>%
+  group_by(Month) %>%
+  summarise(Total_Revenue = sum(Revenue))
+
+
+#combined line graphs
+monthly_revenue_combined <- bind_rows(
+  monthly_revenue_2015 %>% mutate(Year = 2015),
+  monthly_revenue_2016 %>% mutate(Year = 2016)
+)
+
+ggplot(monthly_revenue_combined, aes(x = Month, y = Total_Revenue, color = as.factor(Year))) +
+  geom_line(aes(group = Year)) +
+  geom_point() +
+  labs(title = "Revenue Trends 2015 vs 2016", x = "Month", y = "Total Revenue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+In 2015, revenue appears to be growing steadily from January - June, with a considerable increase between June to July and July to August. Steady growth from August - November, with another large increase from November to December.
+
+In 2016, there is steady growth from January - June, with a substantial drop off between June to July. 
+
+
+## Metrics by Country
+```{r}
+#US SALES
+data_us <- data[data$Country == "United States", ]
+
+category_US <- table(data_us$Product.Category)
+
+category_percentages <- round(100 * category_US / sum(category_US), 1)
+labels <- paste(names(category_US), "\n", category_US, " (", category_percentages, "%)", sep = "")
+
+pie(category_US, labels = labels,
+    main = "Distribution of Product Categories in the United States")
+
+
+#GERMANY SALES
+germany <- data[data$Country == "Germany", ]
+category_Germany <- table(germany$Product.Category)
+
+category_percentages <- round(100 * category_Germany / sum(category_Germany), 1)
+labels <- paste(names(category_Germany), "\n", category_Germany, " (", category_percentages, "%)", sep = "")
+
+pie(category_Germany, labels = labels,
+    main = "Distribution of Product Categories in Germany")
+
+
+#FRANCE SALES
+France <- data[data$Country == "France", ]
+category_France <- table(France$Product.Category)
+
+category_percentages <- round(100 * category_France / sum(category_France), 1)
+labels <- paste(names(category_France), "\n", category_France, " (", category_percentages, "%)", sep = "")
+
+pie(category_France, labels = labels,
+    main = "Distribution of Product Categories in France")
+
+
+#UK SALES
+UK <- data[data$Country == "United Kingdom", ]
+category_UK <- table(UK$Product.Category)
+
+category_percentages <- round(100 * category_UK / sum(category_UK), 1)
+labels <- paste(names(category_UK), "\n", category_UK, " (", category_percentages, "%)", sep = "")
+
+pie(category_UK, labels = labels,
+    main = "Distribution of Product Categories in the United Kingdom")
+
+```
+
+In the four countries under consideration, the sales composition remains fairly consistent, with accessories accounting for approximately two-thirds of total sales. Bikes constitute roughly 20% of the sales, while clothing comprises approximately 15%.
+
+Now lets examine each country's business metrics: revenue, cost, profit, and margins. 
+```{r}
+#revenue, profit, cost by country
+country_metrics <- data %>%
+  group_by(Country) %>%
+  summarise(total_Profit = sum(Profit),
+            total_Cost = sum(Cost),
+            total_Revenue = sum(Revenue),
+            avg_margins = mean(margin))
+#bar graph for metrics
+ggplot(country_metrics, aes(x = Country)) +
+  geom_bar(aes(y = total_Profit, fill = "Total Profit"), stat = "identity", position = "dodge") +
+  geom_bar(aes(y = total_Cost, fill = "Total Cost"), stat = "identity", position = "dodge", width = 0.5) +
+  geom_bar(aes(y = total_Revenue, fill = "Total Revenue"), stat = "identity", position = "dodge", width = 0.25) +
+  labs(title = "Business Metrics by Country",
+       x = "Country",
+       y = "Amount") +
+  scale_fill_manual(values = c("Total Profit" = "blue", "Total Cost" = "red", "Total Revenue" = "green")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma)
+```
+
+Despite having the most customers and greatest total revenue, the United States does not generate the most profit. Let's take a look at some factors that could be the root of this occurence: unit price and margins
+
+```{r}
+#mean unit price by country
+ggplot(data, aes(x = Country, y = Unit.Price)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "blue") +
+  labs(title = "Relationship between (mean) Unit Price and Country",
+       x = "Country",
+       y = "Mean Unit Price") +
+  theme_minimal()
+
+
+#mean margin by country
+ggplot(data, aes(x = Country, y = margin)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "blue") +
+  labs(title = "Relationship between (mean) Margin and Country",
+       x = "Country",
+       y = "Mean Margin") +
+  theme_minimal()
+
+```
+
+Again, What's noteworthy is that despite the United States having the largest market generating the highest total revenue at 10,377,742, more than double that of the second-ranking country, the United Kingdom with 4,276,220, it does not boast the highest profit. In fact, Germany emerges as the leader in total profit, a fact that can be attributed to its considerably superior profit margins and higher unit prices compared to those of the United States. Germany's mean margin stands at 123, while the United States lags behind with a mean margin of 23.
+
+## Conclusion
+The market data was divided by country to represent different markets. In terms of market segmentation, the United States boasts the highest customer count, while Germany and France lag behind with the fewest customers. Despite the United States having the largest market share in population terms, it surprisingly generated the least profit, with Germany leading in average profit margins.
+
+Analyzing the situation, the variations in revenue and prices can be attributed to several factors:
+
+-The company's strategy of attracting a large customer base in the United States through low prices or discounts.  
+
+-The most popular products in the United States have lower profit margins compared to those in Germany.
+
+In 2016, the company experienced a substantial decline in revenue from June to July. While the causes are unknown, the company can analyze market trends, customer feedback, and internal operations to identify contributing factors.
+
+
